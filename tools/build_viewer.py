@@ -17,6 +17,90 @@ RUNS_DIR = ROOT / "runs"
 TEMPLATE = ROOT / "tools" / "viewer_template.html"
 OUTPUT = ROOT / "viewer" / "index.html"
 
+# Hand-curated mapping for tickers we know — Chinese name + sector tag.
+# yfinance's longName is English ("Yuexiu Property Company Limited"), so we
+# pin the Chinese name here. Falls through to yfinance if ticker not listed.
+KNOWN_COMPANIES: dict[str, dict[str, str]] = {
+    "001979.SZ": {"cn_name": "招商蛇口", "industry": "房地产开发(央企)"},
+    "0123.HK":   {"cn_name": "越秀地产", "industry": "房地产开发(国企)"},
+    "600030.SS": {"cn_name": "中信证券", "industry": "证券业"},
+    "600048.SS": {"cn_name": "保利发展", "industry": "房地产开发(央企)"},
+    "600791.SS": {"cn_name": "京能置业", "industry": "房地产开发"},
+}
+
+
+def detect_exchange(ticker: str) -> str:
+    """Map ticker suffix + numeric prefix to a Chinese exchange label."""
+    t = ticker.upper()
+    if t.endswith(".SS") or t.endswith(".SH"):
+        prefix = t[:3]
+        if prefix in ("600", "601", "603", "605"): return "上交所主板"
+        if prefix == "688": return "上交所科创板"
+        if prefix == "900": return "上交所B股"
+        return "上交所"
+    if t.endswith(".SZ"):
+        prefix = t[:3]
+        if prefix in ("000", "001", "002", "003"): return "深交所主板"
+        if prefix in ("300", "301"): return "深交所创业板"
+        if prefix == "200": return "深交所B股"
+        return "深交所"
+    if t.endswith(".HK"): return "港交所"
+    if t.endswith(".T"):  return "东京证交所"
+    if t.endswith(".KS"): return "韩国证交所"
+    if t.endswith(".L"):  return "伦敦证交所"
+    if t.endswith(".TO"): return "多伦多证交所"
+    if t.endswith(".AX"): return "澳大利亚证交所"
+    if "." not in t: return "美股"
+    return t.split(".")[-1]
+
+
+_meta_cache: dict[str, dict[str, str]] = {}
+
+
+def get_company_meta(ticker: str, ticker_dir: Path) -> dict[str, str]:
+    """Resolve display metadata for a ticker. Order: in-memory cache → known-list
+    → on-disk cache (runs/<ticker>/_meta.json) → yfinance live → ticker fallback.
+    """
+    if ticker in _meta_cache:
+        return _meta_cache[ticker]
+
+    base = {"cn_name": ticker, "exchange": detect_exchange(ticker), "industry": ""}
+    if ticker in KNOWN_COMPANIES:
+        base.update(KNOWN_COMPANIES[ticker])
+        _meta_cache[ticker] = base
+        return base
+
+    cache_file = ticker_dir / "_meta.json"
+    if cache_file.exists():
+        try:
+            saved = json.loads(cache_file.read_text(encoding="utf-8"))
+            base.update({k: v for k, v in saved.items() if v})
+            _meta_cache[ticker] = base
+            return base
+        except Exception:
+            pass
+
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+        live = {
+            "cn_name": info.get("longName") or info.get("shortName") or ticker,
+            "industry": info.get("industry") or info.get("sector") or "",
+            "market_cap": info.get("marketCap") or 0,
+        }
+        base.update({k: v for k, v in live.items() if v})
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(base, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"  yfinance failed for {ticker}: {e}", file=sys.stderr)
+
+    _meta_cache[ticker] = base
+    return base
+
+
 # Pretty section labels for debate-state dict keys (LangGraph TradingAgents shape).
 DEBATE_SECTIONS_INVESTMENT = [
     ("judge_decision", "🧑‍⚖️ 研究经理评判"),
@@ -108,11 +192,14 @@ def load_run(ticker_dir: Path, date_dir: Path) -> dict | None:
         files[f.stem] = maybe_parse_dict_file(f.stem, content)
     if not files:
         return None
+    ticker = ticker_dir.name.replace("_", ".")
+    meta = get_company_meta(ticker, ticker_dir)
     return {
-        "ticker": ticker_dir.name.replace("_", "."),
+        "ticker": ticker,
         "date": date_dir.name,
         "decision": files.get("decision", "").strip(),
         "files": files,
+        "meta": meta,
     }
 
 
@@ -152,7 +239,9 @@ def main() -> int:
     print(f"wrote {OUTPUT.relative_to(ROOT)}  ({size_kb:.1f} KB, {len(runs)} runs)")
     if runs:
         for r in runs:
-            print(f"  {r['ticker']:14} {r['date']}  {r['decision'] or '—':12} ({len(r['files'])} files)")
+            m = r.get("meta", {})
+            label = f"{m.get('cn_name', r['ticker'])} ({r['ticker']}) · {m.get('exchange', '?')}"
+            print(f"  {label:<55} {r['date']}  {r['decision'] or '—':12} ({len(r['files'])} files)")
     return 0
 
 

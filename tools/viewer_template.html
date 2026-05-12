@@ -61,14 +61,16 @@
     <!-- Banner -->
     <header id="banner" class="px-6 py-4 text-white shadow-md">
       <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-baseline gap-3">
-            <h2 id="bannerTicker" class="text-2xl font-bold"></h2>
-            <span id="bannerDate" class="text-sm opacity-80"></span>
+        <div class="min-w-0">
+          <h2 id="bannerName" class="text-2xl font-bold truncate"></h2>
+          <div class="flex items-center gap-2 mt-1 flex-wrap">
+            <span id="bannerTicker" class="font-mono text-sm bg-white/20 px-2 py-0.5 rounded"></span>
+            <span id="bannerExchange" class="text-sm bg-white/20 px-2 py-0.5 rounded"></span>
+            <span id="bannerIndustry" class="text-sm bg-white/20 px-2 py-0.5 rounded"></span>
+            <span id="bannerDate" class="text-sm opacity-80 ml-2"></span>
           </div>
-          <p id="bannerCompany" class="text-sm opacity-90 mt-1"></p>
         </div>
-        <div class="text-right">
+        <div class="text-right shrink-0 ml-4">
           <div class="text-xs opacity-80 uppercase tracking-wider">最终决策</div>
           <div id="bannerDecision" class="text-3xl font-extrabold mt-1"></div>
         </div>
@@ -162,7 +164,19 @@
     }
     let html = '';
     for (const ticker of Object.keys(groups).sort()) {
-      html += `<div class="px-3 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase">${ticker}</div>`;
+      const first = groups[ticker][0];
+      const meta = first.meta || {};
+      const cnName = meta.cn_name && meta.cn_name !== ticker ? meta.cn_name : '';
+      const exchange = meta.exchange || '';
+      html += `<div class="px-3 pt-3 pb-1.5 border-b border-gray-100">
+        <div class="text-sm font-bold text-gray-800 truncate" title="${cnName} ${ticker}">
+          ${cnName || ticker}
+        </div>
+        <div class="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+          <span class="font-mono">${ticker}</span>
+          ${exchange ? `<span class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">${exchange}</span>` : ''}
+        </div>
+      </div>`;
       for (const r of groups[ticker]) {
         const dec = decisionLabel(r.decision);
         const cls = decisionClass(r.decision);
@@ -232,14 +246,37 @@
     document.querySelectorAll('.run-item').forEach(b => {
       b.classList.toggle('run-active', parseInt(b.dataset.idx) === idx);
     });
+    const meta = run.meta || {};
     const banner = document.getElementById('banner');
     banner.className = 'px-6 py-4 text-white shadow-md ' + decisionClass(run.decision);
+    document.getElementById('bannerName').textContent = meta.cn_name && meta.cn_name !== run.ticker ? meta.cn_name : run.ticker;
     document.getElementById('bannerTicker').textContent = run.ticker;
-    document.getElementById('bannerDate').textContent = run.date;
-    document.getElementById('bannerCompany').textContent = run.files['company_of_interest'] || '';
+
+    const exchEl = document.getElementById('bannerExchange');
+    if (meta.exchange) {
+      exchEl.textContent = '🏛 ' + meta.exchange;
+      exchEl.style.display = '';
+    } else {
+      exchEl.style.display = 'none';
+    }
+
+    const indEl = document.getElementById('bannerIndustry');
+    if (meta.industry) {
+      indEl.textContent = '🏢 ' + meta.industry;
+      indEl.style.display = '';
+    } else {
+      indEl.style.display = 'none';
+    }
+
+    document.getElementById('bannerDate').textContent = '📅 ' + run.date;
     document.getElementById('bannerDecision').textContent = decisionLabel(run.decision);
 
     const metrics = extractKeyMetrics(run);
+    if (meta.market_cap) {
+      const mc = meta.market_cap;
+      const mcLabel = mc >= 1e9 ? `${(mc/1e9).toFixed(1)}B` : `${(mc/1e6).toFixed(0)}M`;
+      metrics.unshift({ label: 'Market Cap', value: mcLabel });
+    }
     document.getElementById('bannerKeyMetrics').innerHTML = metrics.map(m =>
       `<div class="bg-white/20 backdrop-blur rounded px-3 py-1.5">
         <div class="text-xs opacity-80">${m.label}</div>
