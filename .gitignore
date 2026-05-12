@@ -217,3 +217,7 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# Local TradingAgents analysis output (don't share private analyses)
+runs/
+runs_*.txt

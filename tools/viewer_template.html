@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TradingAgents 报告浏览器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+  .markdown-body { line-height: 1.7; color: #1f2937; }
+  .markdown-body h1 { font-size: 1.6em; font-weight: 700; margin: 1em 0 0.5em; padding-bottom: 0.3em; border-bottom: 2px solid #e5e7eb; }
+  .markdown-body h2 { font-size: 1.35em; font-weight: 700; margin: 1.2em 0 0.5em; padding-bottom: 0.2em; border-bottom: 1px solid #e5e7eb; }
+  .markdown-body h3 { font-size: 1.15em; font-weight: 700; margin: 1em 0 0.4em; color: #111827; }
+  .markdown-body h4 { font-size: 1.05em; font-weight: 700; margin: 0.8em 0 0.3em; }
+  .markdown-body p { margin: 0.5em 0; }
+  .markdown-body ul, .markdown-body ol { margin: 0.5em 0; padding-left: 1.6em; }
+  .markdown-body li { margin: 0.2em 0; }
+  .markdown-body table { border-collapse: collapse; margin: 0.8em 0; width: 100%; font-size: 0.95em; }
+  .markdown-body th, .markdown-body td { border: 1px solid #d1d5db; padding: 6px 10px; text-align: left; }
+  .markdown-body th { background: #f3f4f6; font-weight: 600; }
+  .markdown-body code { background: #f3f4f6; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }
+  .markdown-body pre { background: #1f2937; color: #f9fafb; padding: 12px 16px; border-radius: 6px; overflow-x: auto; }
+  .markdown-body pre code { background: transparent; color: inherit; padding: 0; }
+  .markdown-body blockquote { border-left: 4px solid #d1d5db; padding-left: 1em; color: #4b5563; margin: 0.5em 0; }
+  .markdown-body strong { font-weight: 700; color: #111827; }
+  .markdown-body hr { border: 0; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
+  .scroll-shadow { box-shadow: inset 0 -8px 8px -8px rgba(0,0,0,0.08), inset 0 8px 8px -8px rgba(0,0,0,0.08); }
+  .tab-active { background: #fff; color: #1f2937; border-bottom-color: #3b82f6 !important; }
+  .run-active { background: #eff6ff; border-left: 3px solid #3b82f6; }
+  .decision-buy { background: linear-gradient(135deg, #10b981, #059669); }
+  .decision-sell { background: linear-gradient(135deg, #ef4444, #dc2626); }
+  .decision-hold { background: linear-gradient(135deg, #6b7280, #4b5563); }
+  .decision-underweight { background: linear-gradient(135deg, #f59e0b, #d97706); }
+  .decision-overweight { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+<div class="flex h-screen">
+  <!-- Sidebar: run list -->
+  <aside class="w-72 bg-white border-r border-gray-200 flex flex-col">
+    <div class="px-4 py-4 border-b border-gray-200">
+      <div class="flex items-center justify-between">
+        <h1 class="text-lg font-bold text-gray-800">📊 TradingAgents</h1>
+        <span id="runCount" class="text-xs text-gray-500"></span>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">报告浏览器</p>
+    </div>
+    <div class="px-3 py-2">
+      <input id="searchInput" type="text" placeholder="搜索 ticker..." class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500" />
+    </div>
+    <div id="runList" class="flex-1 overflow-y-auto"></div>
+    <div class="px-4 py-2 border-t border-gray-200 text-xs text-gray-500">
+      生成时间: <span id="genTime"></span>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <!-- Banner -->
+    <header id="banner" class="px-6 py-4 text-white shadow-md">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="flex items-baseline gap-3">
+            <h2 id="bannerTicker" class="text-2xl font-bold"></h2>
+            <span id="bannerDate" class="text-sm opacity-80"></span>
+          </div>
+          <p id="bannerCompany" class="text-sm opacity-90 mt-1"></p>
+        </div>
+        <div class="text-right">
+          <div class="text-xs opacity-80 uppercase tracking-wider">最终决策</div>
+          <div id="bannerDecision" class="text-3xl font-extrabold mt-1"></div>
+        </div>
+      </div>
+      <div id="bannerKeyMetrics" class="mt-3 flex flex-wrap gap-4 text-sm"></div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="bg-gray-100 border-b border-gray-200 px-2 flex overflow-x-auto scroll-shadow" id="tabs"></nav>
+
+    <!-- Tab content -->
+    <section id="content" class="flex-1 overflow-y-auto px-8 py-6 bg-white">
+      <div id="reportBody" class="markdown-body max-w-4xl mx-auto"></div>
+      <div id="emptyHint" class="text-center text-gray-400 mt-12 hidden">
+        <p>👈 从左侧选择一个分析报告</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script id="payload" type="application/json">__DATA__</script>
+<script>
+(function() {
+  const TAB_ORDER = [
+    { key: 'final_trade_decision', label: '✅ 最终决策', icon: '✅' },
+    { key: 'trader_investment_plan', label: '🎯 交易员计划' },
+    { key: 'investment_plan', label: '📋 投资方案' },
+    { key: 'market_report', label: '📊 技术面' },
+    { key: 'fundamentals_report', label: '💹 基本面' },
+    { key: 'news_report', label: '📰 新闻面' },
+    { key: 'sentiment_report', label: '💬 情绪面' },
+    { key: 'investment_debate_state', label: '🥊 多空辩论' },
+    { key: 'risk_debate_state', label: '🛡️ 风控辩论' },
+  ];
+  const SKIP_FILES = new Set(['decision', 'trade_date', 'company_of_interest', 'sender', 'messages', 'past_context']);
+
+  let runs = [];
+  try {
+    const raw = document.getElementById('payload').textContent.replace(/<\\\//g, '</');
+    const parsed = JSON.parse(raw);
+    runs = parsed.runs || [];
+    document.getElementById('genTime').textContent = parsed.generated || '';
+  } catch (e) {
+    console.error('Failed to parse payload', e);
+  }
+
+  document.getElementById('runCount').textContent = `${runs.length} 个报告`;
+
+  let currentRunIdx = -1;
+  let currentTab = 'final_trade_decision';
+
+  function decisionClass(decision) {
+    const d = (decision || '').toLowerCase();
+    if (d.includes('buy') || d.includes('overweight') || d.includes('买入') || d.includes('增持')) return 'decision-buy';
+    if (d.includes('sell') || d.includes('underweight') || d.includes('卖出') || d.includes('减持')) return d.includes('underweight') || d.includes('减持') ? 'decision-underweight' : 'decision-sell';
+    if (d.includes('hold') || d.includes('持有') || d.includes('观望') || d.includes('中性')) return 'decision-hold';
+    return 'decision-hold';
+  }
+
+  function decisionLabel(decision) {
+    if (!decision) return '—';
+    const d = decision.trim();
+    const map = {
+      'buy': '买入 BUY', 'sell': '卖出 SELL', 'hold': '观望 HOLD',
+      'underweight': '减持 减仓', 'overweight': '增持 加仓',
+    };
+    return map[d.toLowerCase()] || d;
+  }
+
+  function extractKeyMetrics(run) {
+    const txt = (run.files['trader_investment_plan'] || '') + '\\n' + (run.files['final_trade_decision'] || '');
+    const metrics = [];
+    const patterns = [
+      { label: 'Entry', re: /(?:Entry Price|入场|建仓)[\\s\\S]{0,80}?(\\d+(?:\\.\\d+)?)/i },
+      { label: 'Stop Loss', re: /(?:Stop Loss|止损)[\\s\\S]{0,80}?(\\d+(?:\\.\\d+)?)/i },
+    ];
+    for (const p of patterns) {
+      const m = txt.match(p.re);
+      if (m) metrics.push({ label: p.label, value: m[1] });
+    }
+    const sizingMatch = txt.match(/Position Sizing[\\s\\S]*?\\n([^\\n]+)/);
+    if (sizingMatch) metrics.push({ label: 'Sizing', value: sizingMatch[1].trim().slice(0, 80) });
+    return metrics;
+  }
+
+  function buildSidebar() {
+    const list = document.getElementById('runList');
+    const groups = {};
+    for (const [i, r] of runs.entries()) {
+      (groups[r.ticker] = groups[r.ticker] || []).push({ ...r, _idx: i });
+    }
+    let html = '';
+    for (const ticker of Object.keys(groups).sort()) {
+      html += `<div class="px-3 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase">${ticker}</div>`;
+      for (const r of groups[ticker]) {
+        const dec = decisionLabel(r.decision);
+        const cls = decisionClass(r.decision);
+        html += `<button data-idx="${r._idx}" class="run-item w-full text-left px-4 py-2 hover:bg-gray-50 border-l-3 border-transparent flex items-center justify-between gap-2">
+          <span class="text-sm text-gray-700">${r.date}</span>
+          <span class="${cls} text-white text-xs px-2 py-0.5 rounded-full font-medium">${dec.split(' ')[0]}</span>
+        </button>`;
+      }
+    }
+    list.innerHTML = html;
+    list.querySelectorAll('.run-item').forEach(btn => {
+      btn.addEventListener('click', () => selectRun(parseInt(btn.dataset.idx)));
+    });
+  }
+
+  function buildTabs(run) {
+    const tabs = document.getElementById('tabs');
+    let html = '';
+    for (const t of TAB_ORDER) {
+      const has = run.files[t.key];
+      if (!has) continue;
+      const size = has.length;
+      const active = t.key === currentTab ? 'tab-active' : '';
+      html += `<button data-tab="${t.key}" class="tab-btn px-4 py-2 text-sm border-b-2 border-transparent hover:bg-white whitespace-nowrap ${active}">
+        ${t.label} <span class="text-xs text-gray-400 ml-1">${(size/1024).toFixed(1)}K</span>
+      </button>`;
+    }
+    // Other files not in tab order
+    for (const [key, content] of Object.entries(run.files)) {
+      if (TAB_ORDER.find(t => t.key === key)) continue;
+      if (SKIP_FILES.has(key)) continue;
+      const active = key === currentTab ? 'tab-active' : '';
+      html += `<button data-tab="${key}" class="tab-btn px-4 py-2 text-sm border-b-2 border-transparent hover:bg-white whitespace-nowrap ${active}">
+        📎 ${key}
+      </button>`;
+    }
+    tabs.innerHTML = html;
+    tabs.querySelectorAll('.tab-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        currentTab = b.dataset.tab;
+        renderTab(runs[currentRunIdx]);
+      });
+    });
+  }
+
+  function renderTab(run) {
+    const body = document.getElementById('reportBody');
+    const content = run.files[currentTab];
+    if (!content) {
+      body.innerHTML = '<p class="text-gray-400 text-center mt-12">该报告无内容</p>';
+    } else {
+      try {
+        body.innerHTML = marked.parse(content);
+      } catch (e) {
+        body.textContent = content;
+      }
+    }
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('tab-active', b.dataset.tab === currentTab);
+    });
+    document.getElementById('content').scrollTop = 0;
+  }
+
+  function selectRun(idx) {
+    currentRunIdx = idx;
+    const run = runs[idx];
+    document.querySelectorAll('.run-item').forEach(b => {
+      b.classList.toggle('run-active', parseInt(b.dataset.idx) === idx);
+    });
+    const banner = document.getElementById('banner');
+    banner.className = 'px-6 py-4 text-white shadow-md ' + decisionClass(run.decision);
+    document.getElementById('bannerTicker').textContent = run.ticker;
+    document.getElementById('bannerDate').textContent = run.date;
+    document.getElementById('bannerCompany').textContent = run.files['company_of_interest'] || '';
+    document.getElementById('bannerDecision').textContent = decisionLabel(run.decision);
+
+    const metrics = extractKeyMetrics(run);
+    document.getElementById('bannerKeyMetrics').innerHTML = metrics.map(m =>
+      `<div class="bg-white/20 backdrop-blur rounded px-3 py-1.5">
+        <div class="text-xs opacity-80">${m.label}</div>
+        <div class="font-semibold">${m.value}</div>
+      </div>`).join('');
+
+    // Pick first available tab from priority order if current isn't available
+    if (!run.files[currentTab]) {
+      for (const t of TAB_ORDER) {
+        if (run.files[t.key]) { currentTab = t.key; break; }
+      }
+    }
+    buildTabs(run);
+    renderTab(run);
+  }
+
+  // Search filter
+  document.getElementById('searchInput').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase().trim();
+    document.querySelectorAll('#runList > div, .run-item').forEach(el => {
+      el.style.display = '';
+    });
+    if (!q) return;
+    let lastHeader = null;
+    let headerHasMatch = false;
+    document.querySelectorAll('#runList > *').forEach(el => {
+      if (el.tagName === 'DIV') {
+        if (lastHeader && !headerHasMatch) lastHeader.style.display = 'none';
+        lastHeader = el;
+        headerHasMatch = el.textContent.toLowerCase().includes(q);
+      } else if (el.classList.contains('run-item')) {
+        const match = headerHasMatch || el.textContent.toLowerCase().includes(q);
+        el.style.display = match ? '' : 'none';
+        if (match) headerHasMatch = true;
+      }
+    });
+    if (lastHeader && !headerHasMatch) lastHeader.style.display = 'none';
+  });
+
+  buildSidebar();
+  if (runs.length > 0) {
+    selectRun(0);
+  } else {
+    document.getElementById('content').innerHTML = '<p class="text-gray-400 text-center mt-12">runs/ 目录暂无报告。先跑一次 TradingAgents 再回来看。</p>';
+    document.getElementById('banner').className = 'px-6 py-4 text-white shadow-md decision-hold';
+    document.getElementById('bannerTicker').textContent = '暂无数据';
+  }
+})();
+</script>
+</body>
+</html>
